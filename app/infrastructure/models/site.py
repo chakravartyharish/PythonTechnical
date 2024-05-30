@@ -26,6 +26,5 @@ class Site(Base):
     groups = relationship(
         "Group",
         secondary=site_group_association,
-        backref="sites", lazy='joined'
+        backref="sites", lazy='selectinload'
     )
-

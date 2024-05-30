@@ -4,6 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import IntegrityError
+
+from app.infrastructure import models
 from app.infrastructure.models.db import get_session
 from app.infrastructure.models.group import Group, GroupType
 from app.infrastructure.models.site import Site
@@ -203,22 +205,36 @@ async def delete_site(site_id: int, db: AsyncSession = Depends(get_session)):
         logger.error("IntegrityError: %s", e)
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/groups/", response_model=GroupSchema)
-async def create_group(group: GroupCreate, db: AsyncSession = Depends(get_session)):
-    logger.debug("create_group called with group: %s", group)
-    try:
-        async with db.begin():
-            db_group = Group(**group.dict())
-            db.add(db_group)
-        await db.commit()
-        await db.refresh(db_group)
-        logger.debug("Created group: %s", db_group)
-        return db_group
+# @app.post("/groups/", response_model=GroupSchema)
+# async def create_group(group: GroupCreate, db: AsyncSession = Depends(get_session)):
+#     logger.debug("create_group called with group: %s", group)
+#     try:
+#         async with db.begin():
+#             db_group = Group(**group.dict())
+#             db.add(db_group)
+#         await db.commit()
+#         await db.refresh(db_group)
+#         logger.debug("Created group: %s", db_group)
+#         return db_group
+#
+#     except IntegrityError as e:
+#         await db.rollback()
+#         logger.error("IntegrityError: %s", e)
+#         raise HTTPException(status_code=400, detail=str(e))
 
-    except IntegrityError as e:
-        await db.rollback()
-        logger.error("IntegrityError: %s", e)
-        raise HTTPException(status_code=400, detail=str(e))
+# Group CRUD Operations (Async)
+@app.post("/groups/", response_model=Group, status_code=201)
+async def create_group(group: GroupCreate, db: AsyncSession = Depends(get_session)):
+    # Check if group already exists
+    result = await db.execute(select(Group).where(Group.name == group.name))  # Use .where()
+    if result.scalars().first():
+        raise HTTPException(status_code=400, detail="Group already exists")
+
+    db_group = models.Group(**group.dict())  # Use models.Group for creating the object
+    db.add(db_group)
+    await db.commit()
+    await db.refresh(db_group)
+    return db_group
 
 @app.get("/groups/{group_id}", response_model=GroupSchema)
 async def read_group(group_id: int, db: AsyncSession = Depends(get_session)):

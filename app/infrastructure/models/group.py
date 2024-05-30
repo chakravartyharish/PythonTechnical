@@ -18,5 +18,7 @@ class Group(Base):
     type = Column(Enum(GroupType), index=True)
     parent_id = Column(Integer, ForeignKey('groups.id'), nullable=True)
 
-    sites = relationship('Site', secondary='site_group_association', back_populates='groups')
+    sites = relationship('Site', secondary='site_group_association',backref="groups", lazy='selectinload')
     subgroups = relationship("Group", backref="parent", remote_side=[id])
+
+
