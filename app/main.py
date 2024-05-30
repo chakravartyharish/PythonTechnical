@@ -222,18 +222,27 @@ async def delete_site(site_id: int, db: AsyncSession = Depends(get_session)):
 #         logger.error("IntegrityError: %s", e)
 #         raise HTTPException(status_code=400, detail=str(e))
 
-# Group CRUD Operations (Async)
 @app.post("/groups/", response_model=Group, status_code=201)
 async def create_group(group: GroupCreate, db: AsyncSession = Depends(get_session)):
-    # Check if group already exists
-    result = await db.execute(select(Group).where(Group.name == group.name))  # Use .where()
-    if result.scalars().first():
+    """
+    Creates a new Group.
+    """
+    # Check if the group name already exists
+    existing_group = await db.execute(select(Group).filter(Group.name == group.name))
+    if existing_group.scalars().first():
         raise HTTPException(status_code=400, detail="Group already exists")
 
-    db_group = models.Group(**group.dict())  # Use models.Group for creating the object
+    # Create the new Group instance
+    db_group = Group(name=group.name, type=group.type)
+
+    # Add the group to the database session
     db.add(db_group)
+    # Commit the transaction (save the changes to the database)
     await db.commit()
+    # Refresh the group object to get the auto-generated ID
     await db.refresh(db_group)
+
+    # Return the newly created group
     return db_group
 
 @app.get("/groups/{group_id}", response_model=GroupSchema)
