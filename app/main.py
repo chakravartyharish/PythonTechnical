@@ -14,7 +14,15 @@ import os
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from app.infrastructure.models.db import get_session
-
+from typing import List, AsyncGenerator
+from fastapi import Depends, FastAPI, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from app.infrastructure.models.db import get_session, Base, engine
+from app.infrastructure.models import Site, Group
+from app.schemas import SiteCreate, Site, GroupCreate, Group
+from datetime import date, timedelta
+import logging
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -23,55 +31,113 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 app = FastAPI()
 
-@app.post("/sites/", response_model=SiteSchema)
+
+# Create the database tables on app startup
+@app.on_event("startup")
+async def startup():
+    logging.info("Creating tables...")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+# @app.post("/sites/", response_model=SiteSchema)
+# async def create_site(site: SiteCreate, db: AsyncSession = Depends(get_session)):
+#     logger.debug("create_site called with site: %s", site)
+#     try:
+#         async with db.begin():
+#             if site.efficiency is None:  # Assuming French sites don't have efficiency
+#                 result = await db.execute(
+#                     select(Site)
+#                     .where(Site.installation_date == site.installation_date)
+#                     .options(joinedload(Site.groups))
+#                 )
+#                 existing_site = result.scalars().first()
+#                 logger.debug("Existing site: %s", existing_site)
+#                 if existing_site:
+#                     raise HTTPException(status_code=400, detail="A French site is already installed on this date")
+#             else:  # Assuming Italian sites have efficiency
+#                 if site.installation_date.weekday() not in (5, 6):  # Saturday and Sunday
+#                     raise HTTPException(status_code=400, detail="Italian sites must be installed on weekends")
+#
+#             db_site = Site(
+#                 name=site.name,
+#                 installation_date=site.installation_date,
+#                 max_power_megawatt=site.max_power_megawatt,
+#                 min_power_megawatt=site.min_power_megawatt,
+#                 useful_energy_at_1_megawatt=site.useful_energy_at_1_megawatt,
+#                 efficiency=site.efficiency
+#             )
+#             db.add(db_site)
+#
+#             # Handle groups
+#             if site.groups:
+#                 for group_id in site.groups:
+#                     result = await db.execute(select(Group).where(Group.id == group_id))
+#                     group = result.scalars().first()
+#                     logger.debug("Group: %s", group)
+#                     if group and group.type == GroupType.GROUP3:
+#                         raise HTTPException(status_code=400, detail="A site cannot be associated with a group of type 'group3'")
+#                     db_site.groups.append(group)
+#
+#         await db.commit()
+#         await db.refresh(db_site)
+#         logger.debug("Created site: %s", db_site)
+#         return db_site
+#
+#     except IntegrityError as e:
+#         await db.rollback()
+#         logger.error("IntegrityError: %s", e)
+#         raise HTTPException(status_code=400, detail=str(e))
+@app.post("/sites/", response_model=Site, status_code=201)
 async def create_site(site: SiteCreate, db: AsyncSession = Depends(get_session)):
-    logger.debug("create_site called with site: %s", site)
-    try:
-        async with db.begin():
-            if site.efficiency is None:  # Assuming French sites don't have efficiency
-                result = await db.execute(
-                    select(Site)
-                    .where(Site.installation_date == site.installation_date)
-                    .options(joinedload(Site.groups))
-                )
-                existing_site = result.scalars().first()
-                logger.debug("Existing site: %s", existing_site)
-                if existing_site:
-                    raise HTTPException(status_code=400, detail="A French site is already installed on this date")
-            else:  # Assuming Italian sites have efficiency
-                if site.installation_date.weekday() not in (5, 6):  # Saturday and Sunday
-                    raise HTTPException(status_code=400, detail="Italian sites must be installed on weekends")
-
-            db_site = Site(
-                name=site.name,
-                installation_date=site.installation_date,
-                max_power_megawatt=site.max_power_megawatt,
-                min_power_megawatt=site.min_power_megawatt,
-                useful_energy_at_1_megawatt=site.useful_energy_at_1_megawatt,
-                efficiency=site.efficiency
+    # Business Logic Checks (Async)
+    if site.country == "FR":
+        yesterday = date.today() - timedelta(days=1)
+        result = await db.execute(
+            select(Site).filter(
+                Site.country == "FR", Site.installation_date >= yesterday
             )
-            db.add(db_site)
+        )
+        if result.scalars().all():  # Check if any results were found
+            raise HTTPException(
+                status_code=400,
+                detail="Only one French site can be installed per day.",
+            )
 
-            # Handle groups
-            if site.groups:
-                for group_id in site.groups:
-                    result = await db.execute(select(Group).where(Group.id == group_id))
-                    group = result.scalars().first()
-                    logger.debug("Group: %s", group)
-                    if group and group.type == GroupType.GROUP3:
-                        raise HTTPException(status_code=400, detail="A site cannot be associated with a group of type 'group3'")
-                    db_site.groups.append(group)
+    if site.country == "IT" and date.today().weekday() not in (5, 6):
+        raise HTTPException(
+            status_code=400, detail="Italian sites can only be installed on weekends."
+        )
 
-        await db.commit()
-        await db.refresh(db_site)
-        logger.debug("Created site: %s", db_site)
-        return db_site
+    # Check for existing site with the same name
+    existing_site = await db.execute(
+        select(Site).filter(Site.name == site.name)
+    )
+    if existing_site.scalars().first():
+        raise HTTPException(status_code=400, detail="Site name already exists")
 
-    except IntegrityError as e:
-        await db.rollback()
-        logger.error("IntegrityError: %s", e)
-        raise HTTPException(status_code=400, detail=str(e))
+    if any(group.type == "group3" for group in site.groups):
+        raise HTTPException(
+            status_code=400, detail="Sites cannot be associated with group type 'group3'."
+        )
 
+    # Create Site object
+    db_site = Site(**site.dict())
+
+    # Add groups to the site
+    for group_data in site.groups:
+        group = await db.execute(
+            select(Group).filter(Group.name == group_data.name)
+        )
+        group = group.scalars().first()
+        if group is None:
+            group = Group(name=group_data.name, type=group_data.type)
+            db.add(group)
+        db_site.groups.append(group)
+
+    db.add(db_site)
+    await db.commit()
+    await db.refresh(db_site)
+    return db_site
 @app.get("/sites/{site_id}", response_model=SiteSchema)
 async def read_site(site_id: int, db: AsyncSession = Depends(get_session)):
     logger.debug("read_site called with site_id: %d", site_id)

@@ -37,6 +37,7 @@ from pydantic import BaseModel
 from datetime import date
 from typing import List, Optional
 
+from enum import Enum
 
 class GroupBase(BaseModel):
     name: str
@@ -54,11 +55,17 @@ class Group(GroupBase):
         orm_mode = True
 
 
+class CountryEnum(str, Enum):
+    FR = "FR"
+    IT = "IT"
+
+
 class SiteBase(BaseModel):
     name: str
     installation_date: date
     max_power_megawatt: float
     min_power_megawatt: float
+    country: CountryEnum
     useful_energy_at_1_megawatt: float
     efficiency: Optional[float] = None
 

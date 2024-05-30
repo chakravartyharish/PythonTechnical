@@ -11,6 +11,7 @@ site_group_association = Table(
     Column('group_id', Integer, ForeignKey('groups.id'), primary_key=True)
 )
 
+
 class Site(Base):
     __tablename__ = 'sites'
 
@@ -25,5 +26,6 @@ class Site(Base):
     groups = relationship(
         "Group",
         secondary=site_group_association,
-        back_populates="sites"
+        backref="sites", lazy='joined'
     )
+
