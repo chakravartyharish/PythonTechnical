@@ -8,12 +8,13 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.12"
 fastapi = "^0.110.1"
-sqlalchemy = "^2.0.29"
+sqlalchemy = "^1.4"
 alembic = "^1.13.1"
 asyncpg = "^0.29.0"
 uvicorn = "^0.22.0"
 pydantic-settings = "^2.0.3"  # Corrected version
 psycopg2-binary = "^2.9.6"  # Corrected version
+
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.3.0"
