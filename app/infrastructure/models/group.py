@@ -13,9 +13,8 @@ class Group(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
-    type = Column(Enum(GroupType, name="group_type"))
+    type = Column(String)
     parent_id = Column(Integer, ForeignKey('groups.id'))
-
-    parent = relationship("Group", remote_side=[id])
-    children = relationship("Group")
+    parent = relationship("Group", remote_side=[id], back_populates="children")
+    children = relationship("Group", back_populates="parent")
     sites = relationship("Site", secondary="site_group_association", back_populates="groups")

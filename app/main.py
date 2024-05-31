@@ -93,17 +93,15 @@ async def create_site(site: SiteCreate, db: AsyncSession = Depends(get_db)):
 @app.get("/sites/{site_id}", response_model=SiteSchema)
 async def read_site(site_id: int, db: AsyncSession = Depends(get_db)):
     logger.debug("read_site called with site_id: %d", site_id)
-    result = await db.execute(
-        select(Site)
-        .options(joinedload(Site.groups))
-        .where(Site.id == site_id)
-    )
-    db_site = result.scalars().first()
-    logger.debug("Read site: %s", db_site)
-    if db_site is None:
-        raise HTTPException(status_code=404, detail="Site not found")
-    return db_site
-
+    async with db.begin():
+        result = await db.execute(
+            select(Site).options(joinedload(Site.groups)).where(Site.id == site_id)
+        )
+        db_site = result.scalars().first()
+        logger.debug("Read site: %s", db_site)
+        if db_site is None:
+            raise HTTPException(status_code=404, detail="Site not found")
+        return db_site
 
 @app.patch("/sites/{site_id}", response_model=SiteSchema)
 async def update_site(site_id: int, site: SiteCreate, db: AsyncSession = Depends(get_db)):
